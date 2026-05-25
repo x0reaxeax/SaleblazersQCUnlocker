@@ -1,0 +1,7 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+  </Configurations>
+  <Project Path="Injector/Injector.vcxproj" Id="11a760d0-7869-4dc2-a3d1-c41d5f5a7a7f" />
+  <Project Path="SaleblazersQCUnlocker/SaleblazersQCUnlocker.vcxproj" Id="66cf69bd-ae8a-42d1-8755-ab8768f42ae4" />
+</Solution>
