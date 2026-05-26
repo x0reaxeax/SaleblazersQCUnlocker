@@ -176,6 +176,52 @@ SIZE_T GetModuleSize(
     return pNtHeaders->OptionalHeader.SizeOfImage;
 }
 
+BOOL WriteExecMemory(
+    _In_ LPBYTE lpAddress,
+    _In_reads_bytes_(Size) LPCVOID lpBuffer,
+    _In_ SIZE_T Size
+) {
+    if (NULL == lpAddress || NULL == lpBuffer || Size == 0) {
+        return FALSE;
+    }
+
+    DWORD dwOldProtect = 0;
+    if (!VirtualProtect(
+        lpAddress,
+        Size,
+        PAGE_EXECUTE_READWRITE,
+        &dwOldProtect
+    )) {
+        LogMessage(
+            "VirtualProtect() failed for address %p - E%lu",
+            lpAddress,
+            GetLastError()
+        );
+        return FALSE;
+    }
+
+    memcpy(
+        lpAddress,
+        lpBuffer,
+        Size
+    );
+
+    DWORD dwTemp;
+    if (!VirtualProtect(
+        lpAddress,
+        Size,
+        dwOldProtect,
+        &dwTemp
+    )) {
+        LogMessage(
+            "Failed to revert memory protection for address %p - E%lu",
+            lpAddress,
+            GetLastError()
+        );
+    }
+    return TRUE;
+}
+
 BOOL PatchPlacementRestrictions(
     _In_ LPCBYTE lpGameAssemblyBase
 ) {
@@ -191,42 +237,11 @@ BOOL PatchPlacementRestrictions(
 
     LogMessage("Patch size for placement restriction bypass: %llu bytes\n", sizeof(abPatchBytes));
 
-    DWORD dwOldProtect = 0;
-    if (!VirtualProtect(
-        lpTargetPatchAddress,
-        sizeof(abPatchBytes),
-        PAGE_EXECUTE_READWRITE,
-        &dwOldProtect
-    )) {
-        LogMessage(
-            "VirtualProtect() failed for address %p - E%lu",
-            lpTargetPatchAddress,
-            GetLastError()
-        );
-        return FALSE;
-    }
-
-    memcpy(
+    return WriteExecMemory(
         lpTargetPatchAddress,
         abPatchBytes,
         sizeof(abPatchBytes)
     );
-
-    DWORD dwTemp;
-    if (!VirtualProtect(
-        lpTargetPatchAddress,
-        sizeof(abPatchBytes),
-        dwOldProtect,
-        &dwTemp
-    )) {
-        LogMessage(
-            "Failed to revert memory protection for address %p - E%lu",
-            lpTargetPatchAddress,
-            GetLastError()
-        );
-    }
-
-    return TRUE;
 }
 
 BOOL PatchQuantumConsoleDevMode(
@@ -252,29 +267,19 @@ BOOL PatchQuantumConsoleDevMode(
     LogMessage("Number of QuantumConsole prologue patches: %llu\n", ARRAYSIZE(aQuantumConsoleProloguePatches));
 
     for (DWORD i = 0; i < ARRAYSIZE(aQuantumConsoleProloguePatches); i++) {
-        DWORD dwOldProtect = 0;
-        if (!VirtualProtect(
-            aQuantumConsoleProloguePatches[i].lpTargetAddress,
-            aQuantumConsoleProloguePatches[i].dwPatchSize,
-            PAGE_EXECUTE_READWRITE,
-            &dwOldProtect
-        )) {
-            LogMessage(
-                "VirtualProtect() failed for address %p - E%lu (%lu/%lu)",
-                aQuantumConsoleProloguePatches[i].lpTargetAddress,
-                GetLastError(),
-                aQuantumConsoleProloguePatches[i].dwPatchSize,
-                dwOldProtect
-            );
-
-            return FALSE;
-        }
-
-        memcpy(
+        if (!WriteExecMemory(
             aQuantumConsoleProloguePatches[i].lpTargetAddress,
             aQuantumConsoleProloguePatches[i].bPatchBytes,
             aQuantumConsoleProloguePatches[i].dwPatchSize
-        );
+        )) {
+            LogMessage(
+                "Failed to apply Quantum Console prologue patch %lu/%lu @ %p\n",
+                i + 1,
+                ARRAYSIZE(aQuantumConsoleProloguePatches),
+                aQuantumConsoleProloguePatches[i].lpTargetAddress
+            );
+            return FALSE;
+        }
 
         LogMessage(
             "Prologue patch %lu/%lu applied @ %p\n",
@@ -282,20 +287,6 @@ BOOL PatchQuantumConsoleDevMode(
             ARRAYSIZE(aQuantumConsoleProloguePatches),
             aQuantumConsoleProloguePatches[i].lpTargetAddress
         );
-
-        DWORD dwTemp;
-        if (!VirtualProtect(
-            aQuantumConsoleProloguePatches[i].lpTargetAddress,
-            aQuantumConsoleProloguePatches[i].dwPatchSize,
-            dwOldProtect,
-            &dwTemp
-        )) {
-            LogMessage(
-                "Failed to revert memory protection for address %p - E%lu",
-                aQuantumConsoleProloguePatches[i].lpTargetAddress,
-                GetLastError()
-            );
-        }
     }
 
     LogMessage("Quantum Console dev mode patches applied successfully.\n");
@@ -329,28 +320,21 @@ BOOL PatchQCInlineDevGates(
 
     SIZE_T cAppliedInlinePatches = 0;
     for (DWORD i = 0; i < cTargetAddresses; i++) {
-        DWORD dwOldProtect = 0;
         LPBYTE lpPatchAddress = alpTargetAddresses[i] + cbInlineDevGatePatchOffset;
-        if (!VirtualProtect(
-            lpPatchAddress,
-            sizeof(abInlineDevGatePatch),
-            PAGE_EXECUTE_READWRITE,
-            &dwOldProtect
-        )) {
-            LogMessage(
-                "VirtualProtect() failed for address %p - E%lu",
-                lpPatchAddress,
-                GetLastError()
-            );
-
-            return EXIT_FAILURE;
-        }
-
-        memcpy(
+        
+        if (!WriteExecMemory(
             lpPatchAddress,
             abInlineDevGatePatch,
             sizeof(abInlineDevGatePatch)
-        );
+        )) {
+            LogMessage(
+                "Failed to apply inline dev gate patch %lu/%lu @ %p\n",
+                i + 1,
+                cTargetAddresses,
+                lpPatchAddress
+            );
+            continue;
+        }
 
         LogMessage(
             "Inline dev gate patch %lu/%lu applied @ %p\n",
@@ -359,19 +343,6 @@ BOOL PatchQCInlineDevGates(
             lpPatchAddress
         );
 
-        DWORD dwTemp;
-        if (!VirtualProtect(
-            lpPatchAddress,
-            sizeof(abInlineDevGatePatch),
-            dwOldProtect,
-            &dwTemp
-        )) {
-            LogMessage(
-                "Failed to revert memory protection for address %p - E%lu",
-                lpPatchAddress,
-                GetLastError()
-            );
-        }
         cAppliedInlinePatches++;
     }
     LogMessage("Applied %llu inline dev gate patches.\n", cAppliedInlinePatches);
@@ -479,41 +450,15 @@ BOOL PatchItemGiveRarityBug(
     };
 
     LPBYTE lpTargetPatchAddress = (LPBYTE) lpGameAssemblyBase + 0x0167D9D4;
-    DWORD dwOldProtect = 0;
-    if (!VirtualProtect(
-        lpTargetPatchAddress,
-        sizeof(abPatchBytes),
-        PAGE_EXECUTE_READWRITE,
-        &dwOldProtect
-    )) {
-        LogMessage(
-            "VirtualProtect() failed for address %p - E%lu",
-            lpTargetPatchAddress,
-            GetLastError()
-        );
-        return FALSE;
-    }
 
     LogMessage("Patching item give rarity bug @ %p\n", lpTargetPatchAddress);
-
-    memcpy(
+    if (!WriteExecMemory(
         lpTargetPatchAddress,
         abPatchBytes,
         sizeof(abPatchBytes)
-    );
-
-    DWORD dwTemp;
-    if (!VirtualProtect(
-        lpTargetPatchAddress,
-        sizeof(abPatchBytes),
-        dwOldProtect,
-        &dwTemp
     )) {
-        LogMessage(
-            "Failed to revert memory protection for address %p - E%lu",
-            lpTargetPatchAddress,
-            GetLastError()
-        );
+        LogMessage("Failed to patch item give rarity bug!\n");
+        return FALSE;
     }
 
     LogMessage("Item give rarity bug patch applied successfully.\n");
