@@ -3,7 +3,7 @@ Unlocks hidden developer and debug commands within the in-game QuantumConsole.
 
 Required game version: v0.21.0.2  
 
-## Warning
+> [!WARNING]
 Many hidden commands are hidden on purpose, and can result in save-game / character data corruption.  
 **USE AT YOUR OWN RISK**  
 
