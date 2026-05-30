@@ -1,23 +1,23 @@
-// Saleblazers QCUnlocker - Game Version v0.21.0.2
+// Saleblazers QCUnlocker - Game Version v0.21.0.3
 //  - https://github.com/x0reaxeax/SaleblazersQCUnlocker
 // 
 // 
 // Free Move
 //  * BaseItemPlacingManager.CanPlaceObject
-//      RVA: 0x121BD00 Offset: 0x121AF00 VA: 0x18121BD00
+//      RVA: 0x0122B3C0 Offset: 0x1229BC0 VA: 0x18122B3C0
 //	        public bool CanPlaceObject() { } 
 // 
 // QuantumConsole Patcher
 //  * QuantumConsole.IsValidCommand
 //      :: Base - GameAssembly.dll
-//          RVA @ 0x04D57ED0
+//          RVA @ 0x04D757D0
 //              public static bool IsValidCommand(CommandData command) { }
 //      :: Patch
 //          B8 01 00 00 00 C3                    ; MOV EAX, 1; RETN
 // 
 //  * HRConsoleCommands.CheckAllowDeveloperCommand
 //      :: Base - GameAssembly.dll
-//          RVA @ 0x0166CE30
+//          RVA @ 0x01693620
 //              public static bool CheckAllowDeveloperCommand(bool HostOnlyCheat = False, bool IsCheat = True) { }
 //      :: Patch
 //          B8 01 00 00 00 C3                    ; MOV EAX, 1; RETN
@@ -53,6 +53,7 @@
 //         66 0F 1F 44 00 00       ; NOP WORD PTR [RAX + RAX + 00h]
 //
 // Give Commands Rarity Fix
+//   :: HRConsoleCommands$$GivePrefab_Server+0x364
 //     RVA:      0x0167D9D4
 //     Original: 45 33 C9        ; XOR R9D, R9D
 //     Patch:    41 B1 01        ; MOV R9B, 1       ; bypassLimit=true
@@ -64,6 +65,15 @@
 #include "QCUnlocker.h"
 #include "Logging.h"
 #include "Config.h"
+
+#define RVA64(base, offset) ((LPBYTE)(base) + (offset))
+#define RVA RVA64
+
+#define OFFSET_QC_IsValidCommand                0x04D757D0
+#define OFFSET_BIP_CanPlaceObject               0x0122B3C0
+#define OFFSET_HRCC_CheckAllowDeveloperCommand  0x01693620
+#define OFFSET_HRCC_GivePrefab_Server           0x016A3D80
+#define OFFSET_HRCC_GivePrefab_Server_RarityFix 0x364
 
 GLOBALHANDLE g_hThread = NULL;
 DWORD g_dwThreadId = 0;
@@ -229,7 +239,11 @@ BOOL PatchPlacementRestrictions(
         return FALSE;
     }
 
-    LPBYTE lpTargetPatchAddress = (LPBYTE) lpGameAssemblyBase + 0x121BD00;
+    LPBYTE lpTargetPatchAddress = RVA(
+        lpGameAssemblyBase,
+        OFFSET_BIP_CanPlaceObject
+    );
+
     BYTE abPatchBytes[6] = { 
         0xB8, 0x01, 0x00, 0x00, 0x00,   // MOV EAX, 1   // just in case the boolean return is greater than 1 byte
         0xC3                            // RET
@@ -253,12 +267,12 @@ BOOL PatchQuantumConsoleDevMode(
     
     CONST PATCH_INFO aQuantumConsoleProloguePatches[] = {
         {
-            (LPBYTE) lpGameAssemblyBase + 0x04D57ED0,       // QuantumConsole.IsValidCommand
+            RVA(lpGameAssemblyBase, OFFSET_QC_IsValidCommand),                      // QuantumConsole.IsValidCommand
             { 0xB8, 0x01, 0x00, 0x00, 0x00, 0xC3 },
             6
         },
         {
-            (LPBYTE) lpGameAssemblyBase + 0x0166CE30,       // HRConsoleCommands.CheckAllowDeveloperCommand
+            RVA(lpGameAssemblyBase, OFFSET_HRCC_CheckAllowDeveloperCommand),       // HRConsoleCommands.CheckAllowDeveloperCommand
             { 0xB8, 0x01, 0x00, 0x00, 0x00, 0xC3 },
             6
         }
@@ -449,7 +463,10 @@ BOOL PatchItemGiveRarityBug(
         0x41, 0xB1, 0x01        // MOV R9B, 1       ; bypassLimit=true
     };
 
-    LPBYTE lpTargetPatchAddress = (LPBYTE) lpGameAssemblyBase + 0x0167D9D4;
+    LPBYTE lpTargetPatchAddress = RVA(
+        lpGameAssemblyBase, 
+        OFFSET_HRCC_GivePrefab_Server + OFFSET_HRCC_GivePrefab_Server_RarityFix
+    );
 
     LogMessage("Patching item give rarity bug @ %p\n", lpTargetPatchAddress);
     if (!WriteExecMemory(
